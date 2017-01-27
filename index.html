@@ -1,0 +1,443 @@
+<html>
+<head>
+  <style>
+    body {
+      font-family: monospace;
+    }
+    .damage-label {
+      display: inline-block;
+      margin-right: 6px;
+      width: 200px;
+    }
+    .damage-value {
+      width: 36px;
+      display: inline-block;
+    }
+    .section-label {
+      font-size: 18px;
+      font-weight: 600;
+      margin-top: 6px;
+      margin-bottom: 6px;
+    }
+    #load-save {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background-color: #555;
+      padding: 24px;
+      border-radius: 20px;
+    }
+  </style>
+  <script>
+    Object.prototype.loop = function(fn) {
+      var o = this;
+      Object.keys(this).forEach(function(key) {
+        fn(key, o[key]);
+      })
+    }
+    HTMLCollection.prototype.forEach = Array.prototype.forEach;
+    window.addEventListener('load', function(e ) {
+      var tagsInput = document.getElementById('tags-input');
+      var tagsGo = document.getElementById('tags-go');
+      var baseDamageGo = document.getElementById('new-base-damage');
+      var loadButton = document.getElementById('load-profile-button');
+      var loadInput = document.getElementById('load-profile-input');
+      var saveButton = document.getElementById('save-profile-button');
+      var saveInput = document.getElementById('save-profile-input');
+      loadButton.addEventListener('click', function() {
+        load(loadInput.value);
+      }, false);
+      saveButton.addEventListener('click', function() {
+        save(saveInput.value);
+      }, false);
+      baseDamageGo.addEventListener('click', function() {
+        new BaseDamage();
+      }, false);
+      tagsGo.addEventListener('click', makeDamageBoxes, false);
+
+      function makeDiv(className) {
+        var div = document.createElement('div');
+        if(className) div.className = className;
+        return div;
+      }
+
+      function make(tag, className) {
+        var div = document.createElement(tag);
+        if(className) div.className = className;
+        return div;
+      }
+
+      function on(tag, type, fn) {
+        tag.addEventListener(type, fn, false);
+      }
+      var sourceDamage = '';
+      function setSource(e) {
+        console.log(this.value)
+        sourceDamage = this.value;
+      }
+      document.querySelectorAll('#source input').forEach(function(s) {
+        s.addEventListener('change', setSource, false);
+      })
+
+      function BaseDamage(type, min, max) {
+        var bd = this;
+        this.label = type;
+        this.min = min || 0;
+        this.max = max || 0;
+        var row = make('div', 'row');
+        var label = make('input', 'damage-label');
+        label.value = this.label;
+        var min = make('input', 'damage-value');
+        min.value = this.min;
+        var max = make('input', 'damage-value');
+        max.value = this.max;
+        this.on(min, 'keyup', function(e) {
+          bd.min = parseInt(min.value);
+        });
+        this.on(max, 'keyup', function(e) {
+          bd.max = parseInt(max.value);
+        });
+
+        row.appendChild(label);
+        row.appendChild(min);
+        row.appendChild(max);
+
+        this.on(label, 'keyup', function() {
+          bd.label = this.value;
+        })
+        BaseDamage.sources.push(this);
+        BaseDamage.container.appendChild(row);
+      }
+      BaseDamage.sources = [];
+      BaseDamage.container = document.getElementById('base-damage');
+      BaseDamage.prototype.on = on;
+      BaseDamage.labels = function() {
+        return BaseDamage.sources.map(function(s) {
+          return s.label;
+        })
+      }
+      BaseDamage.prototype.save = function() {
+        return {
+          label: this.label,
+          min: this.min,
+          max: this.max
+        }
+      }
+
+      BaseDamage.save = function() {
+        return BaseDamage.sources.map(function(bd) {
+          return bd.save()
+        })
+      }
+      function IncreasedDamage(type, value) {
+        var id = this;
+        this.label = type;
+        this.value = value || 0;
+        var row = makeDiv('row');
+        var label = makeDiv('damage-label');
+        var val = make('input', 'damage-value');
+        val.value = this.value || 0;
+        label.textContent = 'Increased ' + type;
+        this.tags = {
+          row: row,
+          label: label,
+          val: val
+        }
+
+        val.addEventListener('keyup', function(e) {
+          console.log('keyup')
+          id.value = parseInt(this.value);
+          calculateHitDamage();
+        }, false);
+
+        row.appendChild(label);
+        row.appendChild(val);
+
+        IncreasedDamage.container.appendChild(row);
+        IncreasedDamage.sources[this.label] = this;
+      }
+      IncreasedDamage.sources = {};
+      IncreasedDamage.container = document.getElementById('increased-damage-container');
+      IncreasedDamage.prototype.save = function() {
+        return {
+          label: this.label,
+          value: this.value
+        }
+      }
+      IncreasedDamage.save = function() {
+        var out = [];
+        IncreasedDamage.sources.map(function(bd) {
+          out.push(bd.save());
+        })
+        IncreasedDamage.bdSources.map(function(bd) {
+          out.push(bd.save());
+        })
+        return out;
+      }
+      IncreasedDamage.total = function() {
+        var out = 1;
+        IncreasedDamage.sources.loop(function(key, inst) {
+          out += inst.value / 100;
+        });
+        return out;
+      }
+      IncreasedDamage.prototype.render = renderRow;
+      function MoreDamage(type, value) {
+        var id = this;
+        this.label = type;
+        this.value = value || 0;
+        var row = makeDiv('row');
+        var label = makeDiv('damage-label');
+        var val = make('input', 'damage-value');
+        val.value = this.value || 0;
+        label.textContent = 'More ' + type;
+        this.tags = {
+          row: row,
+          label: label,
+          val: val
+        }
+
+        val.addEventListener('keyup', function(e) {
+          console.log('keyup')
+          if(this.value.match(',')) {
+            var more = 1;
+            this.value.split(',').forEach(function(val) {
+              console.log('more', more, val)
+              more *= 1 + parseInt(val) / 100;
+            })
+            id.value = (more - 1) * 100;
+            console.log(id.value)
+          } else {
+
+            id.value = parseInt(this.value) || 0;
+          }
+          calculateHitDamage();
+        }, false);
+
+        row.appendChild(label);
+        row.appendChild(val);
+        MoreDamage.sources[this.label] = this;
+
+      }
+      MoreDamage.sources = {};
+      MoreDamage.container = document.getElementById('more-damage-container');
+      MoreDamage.prototype.save = function() {
+        return {
+          label: this.label,
+          value: this.value
+        }
+      }
+      MoreDamage.save = function() {
+        var out = [];
+        MoreDamage.sources.map(function(bd) {
+          out.push(bd.save());
+        })
+        return out;
+      }
+
+      MoreDamage.total = function() {
+        var out = 1;
+        MoreDamage.sources.loop(function(key, inst) {
+          out *= 1 + (inst.value / 100);
+        });
+        return out;
+      }
+
+      MoreDamage.prototype.render = renderRow;
+
+      function Duration(value) {
+        this.label = 'duration';
+
+        var row = make('div', 'row');
+        var label = make('div', 'damage-label');
+        label.textContent = this.label;
+        var val = make('input', 'damage-value');
+        val.value = value;
+        this.tags = {
+          row: row,
+          label: label,
+          val: val
+        };
+        row.appendChild(label);
+        row.appendChild(val);
+        Duration.inst.push(this);
+        Duration.sources.duration = this;
+      }
+      Duration.inst = [];
+      Duration.sources = {};
+      Duration.container = document.getElementById('duration');
+      Duration.prototype.render = function() {
+        Duration.container.appendChild(this.tags.row);
+      }
+
+      Duration.prototype.remove = renderRow;
+
+      function renderRow() {
+        this.constructor.container.appendChild(this.tags.row);
+      }
+
+      function TotalDamage(type, value) {
+        this.label = type;
+        this.value = value || 0;
+
+        var row = make('div', 'row');
+        var label = make('div', 'damage-label');
+        label.textContent = type;
+        var val = make('div', 'damage-value');
+        this.tags = {
+          row: row,
+          label: label,
+          val: val
+        };
+        row.appendChild(label);
+        row.appendChild(val);
+        TotalDamage.sources.push(this);
+      }
+      TotalDamage.container = document.getElementById('total-hit-damage');
+      TotalDamage.sources = [];
+      TotalDamage.empty = function() {
+        return TotalDamage.container.innerHTML = '';
+        TotalDamage.container.children.forEach(function(child) {
+          TotalDamage.container.removeChild(child);
+
+        })
+      }
+      TotalDamage.prototype.render = renderRow;
+      TotalDamage.prototype.setVal = function(val) {
+        this.value = val;
+        this.tags.val.textContent = val;
+      }
+      function makeDamageBoxes() {
+        var tagNames = tagsInput.value.split(' ');
+        if(~tagNames.indexOf('duration')) {
+          new Duration(1).render();
+        }
+
+        //tags
+        tagNames.forEach(function(tag) {
+          new IncreasedDamage(tag).render();
+          new MoreDamage(tag).render();
+        });
+        //sources
+        new IncreasedDamage(sourceDamage).render();
+        new MoreDamage(sourceDamage).render();
+        // bases
+        BaseDamage.labels().map(function(tag) {
+          new IncreasedDamage(tag).render();
+          new MoreDamage(tag).render();
+        });
+      }
+      window.IncreasedDamage = IncreasedDamage;
+      window.MoreDamage = MoreDamage;
+      window.TotalDamage = TotalDamage;
+      window.BaseDamage = BaseDamage;
+      function calculateHitDamage() {
+        TotalDamage.empty();
+        BaseDamage.sources.forEach(function(bd) {
+          var td = new TotalDamage(bd.label);
+          var increased = IncreasedDamage.total();
+          var more = MoreDamage.total();
+          console.log(increased, more)
+          hit = more * (bd.min * increased + bd.max * increased) / 2;
+          td.setVal(hit);
+          td.render();
+        })
+
+      }
+      function save(name) {
+        var profiles = JSON.parse(localStorage.profiles);
+        profiles[name] = {
+          base: BaseDamage.save(),
+          increased: IncreasedDamage.save(),
+          more: MoreDamage.save()
+        };
+
+        localStorage.profiles = JSON.stringify(profiles);
+      }
+      window.save = save;
+      function load(name) {
+        var profiles = JSON.parse(localStorage.profiles);
+        var tags = '';
+        IncreasedDamage.bdSources = [];
+        IncreasedDamage.sources = [];
+        profiles[name].base.forEach(function (db) {
+          new BaseDamage(db.label, db.min, db.max)
+        })
+        profiles[name].increased.forEach(function (bd) {
+          console.log('loading increased', bd.label, bd.value);
+          // new MoreDamage(bd.label, bd.value);
+          var base = profiles[name].base.find(function(b) {
+            return bd.label == b.label;
+          })
+          console.log('base', base)
+          var id = new IncreasedDamage(bd.label, bd.value);
+          if(base) {
+            IncreasedDamage.bdSources.push(id);
+          } else {
+            tags += bd.label + ' ';
+            IncreasedDamage.sources.push(id);
+          }
+        })
+        profiles[name].more && profiles[name].more.forEach(function(m) {
+          new MoreDamage(m.label, m.value);
+        })
+        tags.trim();
+        tagsInput.value = tags;
+      }
+
+      function Row(label, value, inst) {
+        this.row = makeDiv('row');
+        this.label = makeDiv('damage-label');
+        this.val = make('input', 'damage-value');
+        row.appendChild(this.label);
+        row.appendChild(this.val);
+
+      }
+    }, false);
+  </script>
+</head>
+<body>
+  <div class='section-label'>Source</div>
+  <div id='source'>
+    <label for='source-spell'>Spell</label>
+    <input type='radio' id='source-spell' name='source' value='spell'/>
+    <label for='source-attack'>Attack</label>
+    <input type='radio' id='source-attack' name='source' value='attack'/>
+  </div>
+  <div class='section-label'>Duration</div>
+  <div id='duration'>
+    <input type='checkmark' id='duration-skill' />
+  </div>
+  <div class='section-label'>Base Damage</div>
+  <div id='base-damage'>
+    <button id='new-base-damage'>New Base Damage</button>
+  </div>
+  <div class='section-label'>Tags</div>
+  <div id='tags'>
+    <input id='tags-input' value='projectile'/>
+    <button id='tags-go'>GO</button>
+  </div>
+  <div class='section-label'>Increased Damage</div>
+  <div id='increased-damage-container'></div>
+  <div class='section-label'>More Damage</div>
+  <div id='more-damage-container'></div>
+  <div class='section-label'>Total Damage</div>
+  <div id='total-hit-damage'>
+
+  </div>
+  <div id='total-hit-crit-damage'>
+
+  </div>
+  <div id='load-save'>
+    <div>
+      <input id='load-profile-input'/>
+      <button id='load-profile-button'>Load</button>
+    </div>
+    <div>
+      <input id='save-profile-input'/>
+      <button id='save-profile-button'>Save</button>
+    </div>
+  </div>
+</body>
+
+</html>
